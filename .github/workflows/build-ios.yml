@@ -24,7 +24,15 @@ jobs:
           npx react-native@0.74.5 init TempNative --version 0.74.5 --skip-install --pm npm
           mv TempNative/ios ./ios
           rm -rf TempNative
-          grep -rl "TempNative" ios --include="*.pbxproj" --include="*.plist" --include="*.xcscheme" | xargs sed -i '' 's/TempNative/MovieApp/g'
+
+          # استبدال الاسم داخل كل الملفات النصية (يشمل Podfile)
+          grep -rlI "TempNative" ios | xargs sed -i '' 's/TempNative/MovieApp/g'
+
+          # إعادة تسمية أي ملف أو مجلد اسمه TempNative
+          find ios -depth -name "*TempNative*" | while read -r path; do
+            newpath=$(echo "$path" | sed 's/TempNative/MovieApp/g')
+            mv "$path" "$newpath"
+          done
 
       - name: Install CocoaPods
         run: cd ios && pod install && cd ..
