@@ -3,13 +3,17 @@ import { API_BASE_URL, API_KEY, AUTH_HEADER_NAME } from "./config";
 // دالة أساسية للطلبات، تضيف مفتاح الـ API تلقائيًا في كل طلب
 async function request(path, params = {}) {
   const url = new URL(`${API_BASE_URL}${path}`);
+  
+  // إضافة مفتاح الـ API تلقائياً مع كل طلب (TMDb يتطلب api_key في الـ query params إذا لم تستخدم الـ Bearer token)
+  url.searchParams.append("api_key", API_KEY);
+  url.searchParams.append("language", "ar-SA"); // لجلب النتائج باللغة العربية إن أمكن
+
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) url.searchParams.append(key, value);
   });
 
   const response = await fetch(url.toString(), {
     headers: {
-      [AUTH_HEADER_NAME]: API_KEY,
       Accept: "application/json",
     },
   });
@@ -21,35 +25,34 @@ async function request(path, params = {}) {
 }
 
 // ===== الشكل المتوقع لكل عنصر (Movie/Series) بعد أي تحويل من API الشركة =====
-// {
-//   id, title, poster, backdrop, rating, year, overview, type: "movie" | "series",
-//   seasons: [{ id, name, episodes: [{ id, title, number, thumbnail, sources: [{quality, url}], subtitleUrl }] }]
-// }
-
 export async function fetchMovies({ page = 1 } = {}) {
-  const data = await request("/movies", { page });
-  return data.results || data.movies || data;
+  // المسار الصحيح للأفلام الشائعة أو المستكشفة في TMDb
+  const data = await request("/discover/movie", { page, sort_by: "popularity.desc" });
+  return data.results || [];
 }
 
 export async function fetchSeries({ page = 1 } = {}) {
-  const data = await request("/series", { page });
-  return data.results || data.series || data;
+  // المسار الصحيح للمسلسلات في TMDb
+  const data = await request("/discover/tv", { page, sort_by: "popularity.desc" });
+  return data.results || [];
 }
 
-export async function fetchTitleDetails(id) {
-  return request(`/titles/${id}`);
+export async function fetchTitleDetails(id, type = "movie") {
+  // type يحدد ما إذا كان فيلماً (movie) أو مسلسلاً (tv) لأن مسارات التفاصيل تختلف في TMDb
+  return request(`/${type}/${id}`);
 }
 
 export async function searchTitles(query) {
   if (!query || query.trim().length === 0) return [];
-  const data = await request("/search", { q: query });
-  return data.results || data;
+  // مسار البحث الشامل في TMDb
+  const data = await request("/search/multi", { query });
+  return data.results || [];
 }
 
-// يرجع روابط التشغيل حسب الجودة + رابط الترجمة العربية فقط لحلقة/فيلم معيّن
+// يرجع روابط التشغيل (ملاحظة: TMDb لا يوفر روابط مشاهدة مباشرة بالفيديو، بل يوفر بيانات الأفلام/المسلسلات فقط)
 export async function fetchPlaybackSources(episodeOrMovieId) {
-  const data = await request(`/playback/${episodeOrMovieId}`);
-  // مثال للشكل المتوقع:
-  // { sources: [{quality:"1080p", url:"..."}, {quality:"720p", url:"..."}], arabicSubtitleUrl: "..." }
+  // إذا كنت تستخدم مصدراً خارجيفياً للفيديو، يمكنك تعديل هذا الجزء، 
+  // أما في TMDb يمكنك جلب الفيديوهات الترويجية (Trailers) مثلاً عبر مسار /movie/{id}/videos
+  const data = await request(`/movie/${episodeOrMovieId}/videos`);
   return data;
 }
