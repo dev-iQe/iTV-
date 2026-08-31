@@ -1,12 +1,10 @@
 import { API_BASE_URL, API_KEY, AUTH_HEADER_NAME } from "./config";
 
-// دالة أساسية للطلبات، تضيف مفتاح الـ API تلقائيًا في كل طلب
+// دالة أساسية للطلبات
 async function request(path, params = {}) {
   const url = new URL(`${API_BASE_URL}${path}`);
-  
-  // إضافة مفتاح الـ API تلقائياً مع كل طلب (TMDb يتطلب api_key في الـ query params إذا لم تستخدم الـ Bearer token)
   url.searchParams.append("api_key", API_KEY);
-  url.searchParams.append("language", "ar-SA"); // لجلب النتائج باللغة العربية إن أمكن
+  url.searchParams.append("language", "ar-SA"); // لجلب النتائج بالعربي
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) url.searchParams.append(key, value);
@@ -24,35 +22,58 @@ async function request(path, params = {}) {
   return response.json();
 }
 
-// ===== الشكل المتوقع لكل عنصر (Movie/Series) بعد أي تحويل من API الشركة =====
+// دالة مساعد لتحويل عنصر TMDb إلى الشكل الموحّد للتطبيق
+function formatItem(item, type = "movie") {
+  return {
+    id: item.id,
+    title: item.title || item.name,
+    poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
+    backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/original${item.backdrop_path}` : null,
+    rating: item.vote_average,
+    year: (item.release_date || item.first_air_date || "").split("-")[0],
+    overview: item.overview,
+    type: item.media_type || type,
+  };
+}
+
 export async function fetchMovies({ page = 1 } = {}) {
-  // المسار الصحيح للأفلام الشائعة أو المستكشفة في TMDb
   const data = await request("/discover/movie", { page, sort_by: "popularity.desc" });
-  return data.results || [];
+  const results = data.results || [];
+  return results.map(movie => formatItem(movie, "movie"));
 }
 
 export async function fetchSeries({ page = 1 } = {}) {
-  // المسار الصحيح للمسلسلات في TMDb
   const data = await request("/discover/tv", { page, sort_by: "popularity.desc" });
-  return data.results || [];
+  const results = data.results || [];
+  return results.map(tv => formatItem(tv, "series"));
 }
 
 export async function fetchTitleDetails(id, type = "movie") {
-  // type يحدد ما إذا كان فيلماً (movie) أو مسلسلاً (tv) لأن مسارات التفاصيل تختلف في TMDb
-  return request(`/${type}/${id}`);
+  const data = await request(`/${type}/${id}`);
+  return {
+    ...formatItem(data, type),
+    genres: data.genres ? data.genres.map(g => g.name) : [],
+    runtime: data.runtime || data.episode_run_time?.[0],
+  };
 }
 
 export async function searchTitles(query) {
   if (!query || query.trim().length === 0) return [];
-  // مسار البحث الشامل في TMDb
   const data = await request("/search/multi", { query });
-  return data.results || [];
+  const results = data.results || [];
+  // تصفية النتائج لتكون أفلام أو مسلسلات فقط
+  return results
+    .filter(item => item.media_type === "movie" || item.media_type === "tv")
+    .map(item => formatItem(item, item.media_type === "tv" ? "series" : "movie"));
 }
 
-// يرجع روابط التشغيل (ملاحظة: TMDb لا يوفر روابط مشاهدة مباشرة بالفيديو، بل يوفر بيانات الأفلام/المسلسلات فقط)
-export async function fetchPlaybackSources(episodeOrMovieId) {
-  // إذا كنت تستخدم مصدراً خارجيفياً للفيديو، يمكنك تعديل هذا الجزء، 
-  // أما في TMDb يمكنك جلب الفيديوهات الترويجية (Trailers) مثلاً عبر مسار /movie/{id}/videos
-  const data = await request(`/movie/${episodeOrMovieId}/videos`);
-  return data;
+// TMDb لا يوفر روابط مشاهدة مباشرة، لذا نجلب الفيديوهات الترويجية (Trailers) كمثال
+export async function fetchPlaybackSources(id, type = "movie") {
+  const data = await request(`/${type}/${id}/videos`);
+  const trailer = data.results?.find(v => v.type === "Trailer" && v.site === "YouTube");
+  
+  return {
+    sources: trailer ? [{ quality: "1080p", url: `https://www.youtube.com/watch?v=${trailer.key}` }] : [],
+    arabicSubtitleUrl: null,
+  };
 }
