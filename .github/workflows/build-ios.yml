@@ -1,45 +1,62 @@
 name: Build iOS IPA
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
+          cache: 'npm'
 
       - name: Install JS dependencies
         run: npm install
 
-      - name: Install CocoaPods
-        run: cd ios && pod install && cd ..
-
-      - name: Build unsigned .app (archive بدون توقيع)
+      # خطوة مهمة جداً: توليد مجلد ios تلقائياً إذا كان مفقوداً في المستودع
+      - name: Generate iOS Native Project
         run: |
-          xcodebuild -workspace ios/MovieApp.xcworkspace \
-            -scheme MovieApp \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
-            build
+          npx react-native-asset || true
+          # إذا كان مشروعك يحتاج لتوليد ملفات الـ ios عبر الأوامر الافتتاحية:
+          npx @react-native-community/cli init TempProject --skip-install || true
+          # أو إذا كنت تستخدم أدوات تفويض لإعادة إنشاء مجلد ios:
+          node -e "const fs = require('fs'); if (!fs.existsSync('ios')) { console.log('Creating ios directory placeholder'); fs.mkdirSync('ios'); }"
+          
+          # الطريقة الأفضل لـ React Native CLI البحت لتوليد مشروع ios إذا لم يكن موجوداً:
+          npx react-native upgrade --skip-git || true
+
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Build unsigned .app (archive)
+        run: |
+          cd ios
+          xcodebuild -workspace *.xcworkspace -scheme iTV -configuration Release -sdk iphoneos -derivedDataPath build CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          cd ..
 
       - name: Package as IPA
         run: |
-          mkdir -p Payload
-          cp -r build/Build/Products/Release-iphoneos/MovieApp.app Payload/
-          zip -r MovieApp.ipa Payload
+          mkdir -p payload
+          cp -r ios/build/Build/Products/Release-iphoneos/*.app payload/
+          cd payload
+          zip -r iTV.ipa *.app
+          mv iTV.ipa ../
+          cd ..
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: app-ipa
-          path: MovieApp.ipa
+          name: iTV-IPA
+          path: iTV.ipa
