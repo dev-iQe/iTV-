@@ -1,83 +1,52 @@
 name: Build iOS IPA
 
 on:
-  push:
-    branches: [ main ]
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   build:
-    runs-on: macos-latest
-
+    runs-on: macos-14
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: ''
+          node-version: 20
 
       - name: Install JS dependencies
         run: npm install
 
-      - name: Build JS Bundle
+      - name: Generate native iOS project
         run: |
-          mkdir -p ios/iTV
-          npx react-native bundle --platform ios --dev false --entry-file index.js --bundle-output ios/main.jsbundle || true
+          npx react-native@0.74.5 init TempNative --version 0.74.5 --skip-install --pm npm
+          mv TempNative/ios ./ios
+          rm -rf TempNative
+          grep -rl "TempNative" ios --include="*.pbxproj" --include="*.plist" --include="*.xcscheme" | xargs sed -i '' 's/TempNative/MovieApp/g'
 
-      - name: Package Valid Mach-O IPA
+      - name: Install CocoaPods
+        run: cd ios && pod install && cd ..
+
+      - name: Build unsigned .app
         run: |
-          rm -rf payload
-          mkdir -p payload/Payload/iTV.app
+          xcodebuild -workspace ios/MovieApp.xcworkspace \
+            -scheme MovieApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
 
-          # نقل ملف الجافا اسكريبت
-          if [ -f "ios/main.jsbundle" ]; then
-            cp ios/main.jsbundle payload/Payload/iTV.app/
-          fi
-
-          # إنشاء ملف Info.plist متوافق
-          cat << 'EOF' > payload/Payload/iTV.app/Info.plist
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>CFBundleIdentifier</key>
-              <string>com.itv.app</string>
-              <key>CFBundleName</key>
-              <string>iTV</string>
-              <key>CFBundleDisplayName</key>
-              <string>iTV</string>
-              <key>CFBundleExecutable</key>
-              <string>iTV</string>
-              <key>CFBundlePackageType</key>
-              <string>APPL</string>
-              <key>CFBundleShortVersionString</key>
-              <string>1.0</string>
-              <key>CFBundleVersion</key>
-              <string>1</string>
-              <key>MinimumOSVersion</key>
-              <string>13.0</string>
-          </dict>
-          </plist>
-          EOF
-
-          # إنشاء ملف ثنائي حقيقي (Mach-O compatible header dummy) لكي لا تظهر مشكلة notMachO
-          # نستخدم أداة cc لتنفيذ ملف C صغير جداً ويتم编译ه كملف Mach-O حقيقي
-          cat << 'EOF' > dummy.c
-          int main() { return 0; }
-          EOF
-          clang -arch arm64 -o payload/Payload/iTV.app/iTV dummy.c || cc -o payload/Payload/iTV.app/iTV dummy.c
-          chmod +x payload/Payload/iTV.app/iTV
-
-          # ضغط الحزمة بصيغة IPA
-          cd payload
-          zip -r ../iTV.ipa Payload
-          cd ..
+      - name: Package as IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/MovieApp.app Payload/
+          zip -r MovieApp.ipa Payload
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
-          name: iTV-IPA
-          path: iTV.ipa
+          name: app-ipa
+          path: MovieApp.ipa
