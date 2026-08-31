@@ -1,10 +1,10 @@
 import { API_BASE_URL, API_KEY, AUTH_HEADER_NAME } from "./config";
 
-// دالة أساسية للطلبات
+// دالة أساسية للطلبات، تضيف مفتاح الـ API تلقائياً في كل طلب
 async function request(path, params = {}) {
   const url = new URL(`${API_BASE_URL}${path}`);
   url.searchParams.append("api_key", API_KEY);
-  url.searchParams.append("language", "ar-SA"); // لجلب النتائج بالعربي
+  url.searchParams.append("language", "ar-SA"); // لجلب النتائج باللغة العربية إن أمكن
 
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null) url.searchParams.append(key, value);
@@ -22,7 +22,7 @@ async function request(path, params = {}) {
   return response.json();
 }
 
-// دالة مساعد لتحويل عنصر TMDb إلى الشكل الموحّد للتطبيق
+// دالة مساعدة لتنسيق البيانات وتحويلها بالشكل الذي تتوقعه الشاشات في تطبيقك
 function formatItem(item, type = "movie") {
   return {
     id: item.id,
@@ -35,6 +35,8 @@ function formatItem(item, type = "movie") {
     type: item.media_type || type,
   };
 }
+
+// ===== الدوال المطلوبة لجلب البيانات =====
 
 export async function fetchMovies({ page = 1 } = {}) {
   const data = await request("/discover/movie", { page, sort_by: "popularity.desc" });
@@ -61,13 +63,13 @@ export async function searchTitles(query) {
   if (!query || query.trim().length === 0) return [];
   const data = await request("/search/multi", { query });
   const results = data.results || [];
-  // تصفية النتائج لتكون أفلام أو مسلسلات فقط
+  
   return results
     .filter(item => item.media_type === "movie" || item.media_type === "tv")
     .map(item => formatItem(item, item.media_type === "tv" ? "series" : "movie"));
 }
 
-// TMDb لا يوفر روابط مشاهدة مباشرة، لذا نجلب الفيديوهات الترويجية (Trailers) كمثال
+// جلب روابط التشغيل أو الفيديوهات الترويجية المرتبطة بالعنصر
 export async function fetchPlaybackSources(id, type = "movie") {
   const data = await request(`/${type}/${id}/videos`);
   const trailer = data.results?.find(v => v.type === "Trailer" && v.site === "YouTube");
