@@ -1,1 +1,45 @@
+name: Build iOS IPA
 
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install JS dependencies
+        run: npm install
+
+      - name: Install CocoaPods
+        run: cd ios && pod install && cd ..
+
+      - name: Build unsigned .app (archive بدون توقيع)
+        run: |
+          xcodebuild -workspace ios/MovieApp.xcworkspace \
+            -scheme MovieApp \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package as IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/MovieApp.app Payload/
+          zip -r MovieApp.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-ipa
+          path: MovieApp.ipa
